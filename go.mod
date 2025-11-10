@@ -1,4 +1,4 @@
-module github.com/libdns/rage4
+module github.com/r6c/rage4
 
 go 1.25
 
