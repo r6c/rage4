@@ -1,4 +1,3 @@
-// Package libdnsrage4 implements a DNS record management client compatible
 // with the libdns interfaces for Rage4 DNS service.
 package libdnsrage4
 
@@ -340,7 +339,35 @@ func (p *Provider) getRecordID(ctx context.Context, domainID int, record libdns.
 		return 0, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
+	// We need to get the zone name to convert Rage4's full names to relative names
+	// Get domain info to retrieve the zone name
+	domainURL := fmt.Sprintf("%s/GetDomain?id=%d", baseURL, domainID)
+	domainReq, err := http.NewRequestWithContext(ctx, "GET", domainURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create domain request: %w", err)
+	}
+	domainReq.SetBasicAuth(p.Email, p.APIKey)
+	domainResp, err := http.DefaultClient.Do(domainReq)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get domain info: %w", err)
+	}
+	defer domainResp.Body.Close()
+
+	var domain DomainResponse
+	if err := json.NewDecoder(domainResp.Body).Decode(&domain); err != nil {
+		return 0, fmt.Errorf("failed to parse domain info: %w", err)
+	}
+	zoneName := domain.Name
+
 	for _, r := range records {
+		// Convert Rage4's full name to relative name for comparison
+		relativeName := r.Name
+		if strings.HasSuffix(r.Name, "."+zoneName) {
+			relativeName = strings.TrimSuffix(r.Name, "."+zoneName)
+		} else if r.Name == zoneName {
+			relativeName = "@"
+		}
+
 		// For TXT records, compare values with and without quotes
 		// since Rage4 API adds quotes to TXT record values
 		valueMatches := false
@@ -355,7 +382,8 @@ func (p *Provider) getRecordID(ctx context.Context, domainID int, record libdns.
 			valueMatches = (r.Content == record.Value)
 		}
 
-		if r.Name == record.Name && r.Type == record.Type && valueMatches {
+		// Compare using relative names
+		if relativeName == record.Name && r.Type == record.Type && valueMatches {
 			return r.ID, nil
 		}
 	}
