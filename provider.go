@@ -341,7 +341,21 @@ func (p *Provider) getRecordID(ctx context.Context, domainID int, record libdns.
 	}
 
 	for _, r := range records {
-		if r.Name == record.Name && r.Type == record.Type && r.Content == record.Value {
+		// For TXT records, compare values with and without quotes
+		// since Rage4 API adds quotes to TXT record values
+		valueMatches := false
+		if r.Type == "TXT" {
+			// Remove quotes from API response if present
+			apiValue := r.Content
+			if len(apiValue) >= 2 && apiValue[0] == '"' && apiValue[len(apiValue)-1] == '"' {
+				apiValue = apiValue[1 : len(apiValue)-1]
+			}
+			valueMatches = (apiValue == record.Value)
+		} else {
+			valueMatches = (r.Content == record.Value)
+		}
+
+		if r.Name == record.Name && r.Type == record.Type && valueMatches {
 			return r.ID, nil
 		}
 	}
@@ -365,11 +379,18 @@ func toLibdnsRecord(r Rage4Record, zoneName string) libdns.Record {
 		relativeName = r.Name
 	}
 
+	// Remove surrounding quotes from TXT records
+	// Rage4 API automatically adds quotes to TXT record values
+	value := r.Content
+	if r.Type == "TXT" && len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		value = value[1 : len(value)-1]
+	}
+
 	return libdns.Record{
 		ID:       strconv.Itoa(r.ID),
 		Type:     r.Type,
 		Name:     relativeName,
-		Value:    r.Content,
+		Value:    value,
 		TTL:      time.Duration(r.TTL) * time.Second,
 		Priority: uint(r.Priority),
 		Weight:   uint(r.Weight),
